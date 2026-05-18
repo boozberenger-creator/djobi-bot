@@ -332,9 +332,9 @@ client.on('messageCreate', async (message) => {
       await message.reply(`Cette commande est réservée au salon <#${VERIFY_CHANNEL_ID}>`)
       return
     }
-    const phone = message.content.trim().split(/\s+/)[1]
-    if (!phone) {
-      await message.reply('Usage : `!verify +22601234567` — entre ton numéro de téléphone DJOBI')
+    const pseudo = message.content.trim().split(/\s+/)[1]
+    if (!pseudo) {
+      await message.reply('Usage : `!verify ton_pseudo` — entre ton pseudo DJOBI (celui affiché sur le classement)')
       return
     }
 
@@ -345,7 +345,7 @@ client.on('messageCreate', async (message) => {
     const { data: profile } = await supabase
       .from('profiles')
       .select('username, display_name, stars_count, is_ambassador, badge_diamond, is_royal_ambassador')
-      .eq('phone', phone)
+      .or(`username.ilike.${pseudo},display_name.ilike.${pseudo}`)
       .maybeSingle()
 
     if (!profile) {
