@@ -342,14 +342,26 @@ client.on('messageCreate', async (message) => {
     const ROLE_AMBASSADEUR = '1505826830530383942'
     const ROLE_DIAMOND     = '1505826909467050075'
 
-    const { data: profile } = await supabase
+    // Cherche d'abord par username, ensuite par display_name
+    let profile = null
+    const { data: byUsername } = await supabase
       .from('profiles')
       .select('username, display_name, stars_count, is_ambassador, badge_diamond, is_royal_ambassador')
-      .or(`username.ilike.${pseudo},display_name.ilike.${pseudo}`)
+      .ilike('username', pseudo)
       .maybeSingle()
+    if (byUsername) {
+      profile = byUsername
+    } else {
+      const { data: byName } = await supabase
+        .from('profiles')
+        .select('username, display_name, stars_count, is_ambassador, badge_diamond, is_royal_ambassador')
+        .ilike('display_name', pseudo)
+        .maybeSingle()
+      profile = byName
+    }
 
     if (!profile) {
-      await message.reply('❌ Numéro introuvable. Vérifie que c\'est le numéro utilisé sur **djobicandle.com**')
+      await message.reply(`❌ Pseudo **${pseudo}** introuvable. Vérifie ton pseudo sur **djobicandle.com/profil**`)
       return
     }
 
