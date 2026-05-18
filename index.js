@@ -325,8 +325,13 @@ client.on('messageCreate', async (message) => {
     return
   }
 
-  // !verify
+  // !verify — salon #vérification uniquement
   if (content.startsWith('!verify')) {
+    const VERIFY_CHANNEL_ID = '1505834881127546960'
+    if (message.channel.id !== VERIFY_CHANNEL_ID) {
+      await message.reply(`Cette commande est réservée au salon <#${VERIFY_CHANNEL_ID}>`)
+      return
+    }
     const phone = message.content.trim().split(/\s+/)[1]
     if (!phone) {
       await message.reply('Usage : `!verify +22601234567` — entre ton numéro de téléphone DJOBI')
