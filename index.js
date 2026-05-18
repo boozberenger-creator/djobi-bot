@@ -1,6 +1,12 @@
 require('dotenv').config()
 const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require('discord.js')
+const { createClient } = require('@supabase/supabase-js')
 const http = require('http')
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
 
 // Keep-alive : empêche Render Free de s'endormir
 const server = http.createServer((req, res) => {
@@ -34,53 +40,84 @@ client.on('messageCreate', async (message) => {
 
   // !tournoi
   if (content === '!tournoi') {
+    const { data: tournois } = await supabase
+      .from('tournaments')
+      .select('name, type, status, entry_price_fcfa, guaranteed_pool_fcfa, current_participants, max_participants, starts_at, ends_at')
+      .in('status', ['open', 'active'])
+      .order('starts_at', { ascending: true })
+      .limit(3)
+
     const embed = new EmbedBuilder()
       .setColor('#C9A84C')
       .setTitle('🏆 Tournois DJOBI')
-      .setDescription('Rejoins l\'arène et prouve ta valeur !')
-      .addFields(
-        {
-          name: '📅 Daily',
-          value: '1 000 FCFA | 1 jour | Pool garanti 50 000 FCFA',
-          inline: false
-        },
-        {
-          name: '🗓️ Weekend',
-          value: '5 000 FCFA | 2-3 jours | Pool garanti 150 000 FCFA',
-          inline: false
-        },
-        {
-          name: '🎯 Inscription',
-          value: '[djobicandle.com](https://djobicandle.com)',
-          inline: false
-        }
-      )
       .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
       .setTimestamp()
+
+    if (!tournois || tournois.length === 0) {
+      embed.setDescription('Aucun tournoi en cours. Reviens bientôt !\n\n[djobicandle.com](https://djobicandle.com)')
+    } else {
+      embed.setDescription('Rejoins l\'arène et prouve ta valeur !')
+      for (const t of tournois) {
+        const pool = t.guaranteed_pool_fcfa > 0
+          ? `${Math.round(t.guaranteed_pool_fcfa / 100).toLocaleString('fr-FR')} FCFA garanti`
+          : `Pool en cours`
+        const prix = `${Math.round(t.entry_price_fcfa / 100).toLocaleString('fr-FR')} FCFA`
+        const status = t.status === 'active' ? '🔴 EN COURS' : '🟢 OUVERT'
+        const places = `${t.current_participants}/${t.max_participants} joueurs`
+        embed.addFields({
+          name: `${status} — ${t.name}`,
+          value: `Mise : ${prix} | Pool : ${pool} | ${places}\n[S\'inscrire](https://djobicandle.com)`,
+          inline: false
+        })
+      }
+    }
+
     await message.reply({ embeds: [embed] })
     return
   }
 
   // !classement
   if (content === '!classement') {
+    const { data: tournoi } = await supabase
+      .from('tournaments')
+      .select('id, name')
+      .eq('status', 'active')
+      .order('starts_at', { ascending: false })
+      .limit(1)
+      .single()
+
     const embed = new EmbedBuilder()
       .setColor('#C9A84C')
       .setTitle('📊 Classement Live DJOBI')
-      .setDescription('Consulte le classement en temps réel sur la plateforme.')
-      .addFields(
-        {
-          name: '🔗 Voir le classement',
-          value: '[djobicandle.com/classement](https://djobicandle.com)',
-          inline: false
-        },
-        {
-          name: 'ℹ️ Règle',
-          value: 'Classement par % de gain — équitable pour tous les joueurs.',
-          inline: false
-        }
-      )
       .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
       .setTimestamp()
+
+    if (!tournoi) {
+      embed.setDescription('Aucun tournoi actif en ce moment.\n\n[djobicandle.com](https://djobicandle.com)')
+    } else {
+      const { data: top } = await supabase
+        .from('tournament_registrations')
+        .select('current_capital_usd, initial_capital_usd, profiles(username, display_name)')
+        .eq('tournament_id', tournoi.id)
+        .eq('is_disqualified', false)
+        .order('current_capital_usd', { ascending: false })
+        .limit(10)
+
+      embed.setDescription(`Tournoi : **${tournoi.name}**\nClassement par % de gain`)
+
+      if (top && top.length > 0) {
+        const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟']
+        const lines = top.map((r, i) => {
+          const name = r.profiles?.display_name || r.profiles?.username || 'Joueur'
+          const pnl = ((r.current_capital_usd - r.initial_capital_usd) / r.initial_capital_usd * 100).toFixed(2)
+          const sign = pnl >= 0 ? '+' : ''
+          return `${medals[i]} **${name}** — ${sign}${pnl}%`
+        }).join('\n')
+        embed.addFields({ name: 'Top 10', value: lines, inline: false })
+        embed.addFields({ name: '🔗 Classement complet', value: '[djobicandle.com](https://djobicandle.com)', inline: false })
+      }
+    }
+
     await message.reply({ embeds: [embed] })
     return
   }
