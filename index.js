@@ -8,8 +8,24 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-// Keep-alive : empêche Render Free de s'endormir
-const server = http.createServer((req, res) => {
+// ─── HTTP Server : keep-alive + webhooks Supabase ───────────
+const server = http.createServer(async (req, res) => {
+  if (req.method === 'POST' && req.url === '/webhook') {
+    const secret = req.headers['x-webhook-secret']
+    if (secret !== process.env.WEBHOOK_SECRET) {
+      res.writeHead(401); res.end('Unauthorized'); return
+    }
+    let body = ''
+    req.on('data', chunk => { body += chunk })
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body)
+        await handleWebhook(payload)
+      } catch (e) { console.error('Webhook error:', e) }
+      res.writeHead(200); res.end('ok')
+    })
+    return
+  }
   res.writeHead(200)
   res.end('DJOBI Bot en ligne')
 })
@@ -61,6 +77,139 @@ async function postClassementFinal(channel, tournoi) {
   }
 
   await channel.send({ embeds: [embed] })
+}
+
+// ─── Webhook handler ────────────────────────────────────────
+const prevStates = new Map()
+
+async function handleWebhook(payload) {
+  const { type, table, record, old_record } = payload
+
+  async function getChannel(envKey, fallbackKey) {
+    try { return await client.channels.fetch(process.env[envKey] || process.env[fallbackKey]) } catch { return null }
+  }
+
+  // ── djobi_infos ──
+  if (table === 'djobi_infos') {
+    const ch = await getChannel('DISCORD_ANNONCES_CHANNEL_ID', 'DISCORD_TOURNOIS_CHANNEL_ID')
+    if (!ch) return
+    const isNew = type === 'INSERT' && record.is_published
+    const justPublished = type === 'UPDATE' && record.is_published && !old_record?.is_published
+    if (!isNew && !justPublished) return
+    const embed = new EmbedBuilder()
+      .setColor('#C9A84C')
+      .setTitle(`📢 ${record.title}`)
+      .setDescription((record.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 4000))
+      .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
+      .setTimestamp()
+    if (record.image_url) embed.setImage(record.image_url)
+    await ch.send({ embeds: [embed] })
+    return
+  }
+
+  // ── tournaments ──
+  if (table === 'tournaments') {
+    const ch = await getChannel('DISCORD_TOURNOIS_CHANNEL_ID', 'DISCORD_TOURNOIS_CHANNEL_ID')
+    if (!ch) return
+    if (type === 'INSERT' && record.status === 'open') {
+      const embed = new EmbedBuilder().setColor('#C9A84C')
+        .setTitle('🟢 Nouveau tournoi ouvert !')
+        .setDescription(`**${record.name}** — Inscriptions ouvertes\n\nMise : ${prixFcfa(record.entry_price_fcfa)} | ${record.current_participants}/${record.max_participants} joueurs`)
+        .addFields({ name: '👉 S\'inscrire', value: '[djobicandle.com](https://djobicandle.com)', inline: false })
+        .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' }).setTimestamp()
+      await ch.send({ embeds: [embed] })
+    }
+    if (type === 'UPDATE' && record.status !== old_record?.status) {
+      if (record.status === 'open') {
+        const embed = new EmbedBuilder().setColor('#C9A84C')
+          .setTitle('🟢 Tournoi ouvert aux inscriptions !')
+          .setDescription(`**${record.name}**\n\nMise : ${prixFcfa(record.entry_price_fcfa)} | ${record.current_participants}/${record.max_participants} joueurs`)
+          .addFields({ name: '👉 S\'inscrire', value: '[djobicandle.com](https://djobicandle.com)', inline: false })
+          .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' }).setTimestamp()
+        await ch.send({ embeds: [embed] })
+      }
+      if (record.status === 'active') {
+        const embed = new EmbedBuilder().setColor('#FF4444')
+          .setTitle('🔴 Tournoi EN COURS — Le combat commence !')
+          .setDescription(`**${record.name}** a démarré !\n\n${record.current_participants} djobleurs en lice. Que le meilleur gagne !`)
+          .addFields({ name: '📊 Classement live', value: '[djobicandle.com](https://djobicandle.com)', inline: false })
+          .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' }).setTimestamp()
+        await ch.send({ embeds: [embed] })
+      }
+      if (record.status === 'closed') {
+        const hf = await getChannel('DISCORD_HALLFAME_CHANNEL_ID', 'DISCORD_TOURNOIS_CHANNEL_ID')
+        await postClassementFinal(ch, record)
+        if (hf) {
+          const { data: winner } = await supabase
+            .from('tournament_registrations')
+            .select('current_capital_usd, initial_capital_usd, profiles(username, display_name)')
+            .eq('tournament_id', record.id).eq('is_disqualified', false)
+            .order('current_capital_usd', { ascending: false }).limit(1).maybeSingle()
+          if (winner) {
+            const wName = winner.profiles?.display_name || winner.profiles?.username || 'Joueur'
+            const wPnl = ((winner.current_capital_usd - winner.initial_capital_usd) / winner.initial_capital_usd * 100).toFixed(2)
+            const embed = new EmbedBuilder().setColor('#C9A84C')
+              .setTitle(`🏆 Vainqueur — ${record.name}`)
+              .setDescription(`**${wName}** remporte **${record.name}** avec **+${wPnl}%** !\n\nFélicitations au champion 🎉`)
+              .addFields({ name: '📊 Classement complet', value: '[djobicandle.com](https://djobicandle.com)', inline: false })
+              .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' }).setTimestamp()
+            await hf.send({ embeds: [embed] })
+          }
+        }
+      }
+    }
+    return
+  }
+
+  // ── profiles ──
+  if (table === 'profiles') {
+    const hf = await getChannel('DISCORD_HALLFAME_CHANNEL_ID', 'DISCORD_TOURNOIS_CHANNEL_ID')
+    if (!hf) return
+    const name = record.display_name || record.username || 'Un djobleur'
+    if (record.is_ambassador && !old_record?.is_ambassador) {
+      const embed = new EmbedBuilder().setColor('#C9A84C').setTitle('🌟 Nouvel Ambassadeur DJOBI !')
+        .setDescription(`**${name}** rejoint l'élite des Ambassadeurs DJOBI !`)
+        .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' }).setTimestamp()
+      await hf.send({ embeds: [embed] })
+    }
+    if (record.is_royal_ambassador && !old_record?.is_royal_ambassador) {
+      const embed = new EmbedBuilder().setColor('#FFD700').setTitle('👑 Nouvel Ambassadeur Royal DJOBI !')
+        .setDescription(`**${name}** accède au rang suprême — **Ambassadeur Royal** !`)
+        .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' }).setTimestamp()
+      await hf.send({ embeds: [embed] })
+    }
+    if (record.badge_diamond && !old_record?.badge_diamond) {
+      const embed = new EmbedBuilder().setColor('#B9F2FF').setTitle('💎 Badge Diamond débloqué !')
+        .setDescription(`**${name}** décroche le **Badge Diamond** DJOBI !`)
+        .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' }).setTimestamp()
+      await hf.send({ embeds: [embed] })
+    }
+    return
+  }
+
+  // ── tournament_registrations (leader change) ──
+  if (table === 'tournament_registrations' && type === 'UPDATE') {
+    const tournamentId = record.tournament_id
+    const { data: tournoi } = await supabase.from('tournaments').select('id, name').eq('id', tournamentId).eq('status', 'active').maybeSingle()
+    if (!tournoi) return
+    const { data: top } = await supabase.from('tournament_registrations')
+      .select('user_id, current_capital_usd, initial_capital_usd, profiles(username, display_name)')
+      .eq('tournament_id', tournamentId).eq('is_disqualified', false)
+      .order('current_capital_usd', { ascending: false }).limit(1).maybeSingle()
+    if (!top) return
+    const prevLeader = prevStates.get(tournamentId)
+    prevStates.set(tournamentId, top.user_id)
+    if (!prevLeader || prevLeader === top.user_id) return
+    const ch = await getChannel('DISCORD_CLASSEMENT_CHANNEL_ID', 'DISCORD_TOURNOIS_CHANNEL_ID')
+    if (!ch) return
+    const name = top.profiles?.display_name || top.profiles?.username || 'Joueur'
+    const pnl = ((top.current_capital_usd - top.initial_capital_usd) / top.initial_capital_usd * 100).toFixed(2)
+    const embed = new EmbedBuilder().setColor('#FFD700').setTitle('👑 Nouveau leader !')
+      .setDescription(`**${name}** prend la tête de **${tournoi.name}** avec **+${pnl}%** !`)
+      .addFields({ name: '📊 Classement complet', value: '[djobicandle.com](https://djobicandle.com)', inline: false })
+      .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' }).setTimestamp()
+    await ch.send({ embeds: [embed] })
+  }
 }
 
 // ─── Bot prêt ───────────────────────────────────────────────
