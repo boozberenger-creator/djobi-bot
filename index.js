@@ -46,6 +46,20 @@ function prixFcfa(centimes) {
   return `${Math.round(centimes / 100).toLocaleString('fr-FR')} FCFA`
 }
 
+function stripHtml(html) {
+  if (!html) return ''
+  // extrait le body si document complet
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)
+  const src = bodyMatch ? bodyMatch[1] : html
+  return src
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 4000)
+}
+
 async function postClassementFinal(channel, tournoi) {
   const { data: top } = await supabase
     .from('tournament_registrations')
@@ -99,7 +113,7 @@ async function handleWebhook(payload) {
     const embed = new EmbedBuilder()
       .setColor('#C9A84C')
       .setTitle(`📢 ${record.title}`)
-      .setDescription((record.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 4000))
+      .setDescription(stripHtml(record.content))
       .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
       .setTimestamp()
     if (record.image_url) embed.setImage(record.image_url)
