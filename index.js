@@ -25,12 +25,104 @@ const client = new Client({
   ]
 })
 
+// ─── Helpers ────────────────────────────────────────────────
+function prixFcfa(centimes) {
+  return `${Math.round(centimes / 100).toLocaleString('fr-FR')} FCFA`
+}
+
+async function postClassementFinal(channel, tournoi) {
+  const { data: top } = await supabase
+    .from('tournament_registrations')
+    .select('current_capital_usd, initial_capital_usd, profiles(username, display_name)')
+    .eq('tournament_id', tournoi.id)
+    .eq('is_disqualified', false)
+    .order('current_capital_usd', { ascending: false })
+    .limit(5)
+
+  const embed = new EmbedBuilder()
+    .setColor('#C9A84C')
+    .setTitle(`🏁 Tournoi terminé — ${tournoi.name}`)
+    .setDescription('Classement final — résultats officiels')
+    .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
+    .setTimestamp()
+
+  if (top && top.length > 0) {
+    const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣']
+    const lines = top.map((r, i) => {
+      const name = r.profiles?.display_name || r.profiles?.username || 'Joueur'
+      const pnl = ((r.current_capital_usd - r.initial_capital_usd) / r.initial_capital_usd * 100).toFixed(2)
+      const sign = pnl >= 0 ? '+' : ''
+      return `${medals[i]} **${name}** — ${sign}${pnl}%`
+    }).join('\n')
+    embed.addFields(
+      { name: 'Top 5', value: lines, inline: false },
+      { name: '🔗 Classement complet', value: '[djobicandle.com](https://djobicandle.com)', inline: false }
+    )
+  }
+
+  await channel.send({ embeds: [embed] })
+}
+
 // ─── Bot prêt ───────────────────────────────────────────────
 client.once('ready', () => {
   console.log(`✅ Bot connecté : ${client.user.tag}`)
   client.user.setActivity('djobicandle.com | Trade. Gagne. Vis.', {
     type: ActivityType.Watching
   })
+
+  const tournoisChannel = client.channels.cache.get(process.env.DISCORD_TOURNOIS_CHANNEL_ID)
+  if (!tournoisChannel) {
+    console.warn('⚠️ DISCORD_TOURNOIS_CHANNEL_ID introuvable')
+    return
+  }
+
+  supabase
+    .channel('tournaments-realtime')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tournaments' }, async (payload) => {
+      const t = payload.new
+      if (t.status !== 'open') return
+      const embed = new EmbedBuilder()
+        .setColor('#C9A84C')
+        .setTitle('🟢 Nouveau tournoi ouvert !')
+        .setDescription(`**${t.name}** — Inscriptions ouvertes\n\nMise : ${prixFcfa(t.entry_price_fcfa)} | ${t.current_participants}/${t.max_participants} joueurs`)
+        .addFields({ name: '👉 S\'inscrire', value: '[djobicandle.com](https://djobicandle.com)', inline: false })
+        .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
+        .setTimestamp()
+      await tournoisChannel.send({ embeds: [embed] })
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tournaments' }, async (payload) => {
+      const { new: t, old: prev } = payload
+      if (t.status === prev.status) return
+
+      if (t.status === 'open') {
+        const embed = new EmbedBuilder()
+          .setColor('#C9A84C')
+          .setTitle('🟢 Tournoi ouvert aux inscriptions !')
+          .setDescription(`**${t.name}**\n\nMise : ${prixFcfa(t.entry_price_fcfa)} | ${t.current_participants}/${t.max_participants} joueurs`)
+          .addFields({ name: '👉 S\'inscrire', value: '[djobicandle.com](https://djobicandle.com)', inline: false })
+          .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
+          .setTimestamp()
+        await tournoisChannel.send({ embeds: [embed] })
+      }
+
+      if (t.status === 'active') {
+        const embed = new EmbedBuilder()
+          .setColor('#FF4444')
+          .setTitle('🔴 Tournoi EN COURS — Le combat commence !')
+          .setDescription(`**${t.name}** a démarré !\n\n${t.current_participants} djobleurs en lice. Que le meilleur gagne !`)
+          .addFields({ name: '📊 Classement live', value: '[djobicandle.com](https://djobicandle.com)', inline: false })
+          .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
+          .setTimestamp()
+        await tournoisChannel.send({ embeds: [embed] })
+      }
+
+      if (t.status === 'closed') {
+        await postClassementFinal(tournoisChannel, t)
+      }
+    })
+    .subscribe((status) => {
+      console.log(`📡 Realtime tournaments : ${status}`)
+    })
 })
 
 // ─── Commandes ──────────────────────────────────────────────
