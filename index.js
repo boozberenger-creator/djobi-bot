@@ -77,6 +77,58 @@ client.once('ready', () => {
   }
 
   const classementChannel = client.channels.cache.get(process.env.DISCORD_CLASSEMENT_CHANNEL_ID) || tournoisChannel
+  const hallFameChannel = client.channels.cache.get(process.env.DISCORD_HALLFAME_CHANNEL_ID) || tournoisChannel
+
+  // ─── Realtime profiles — ambassadeurs / badges ───────────
+  supabase
+    .channel('profiles-realtime')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, async (payload) => {
+      const { new: p, old: prev } = payload
+      const name = p.display_name || p.username || 'Un djobleur'
+
+      if (!prev.is_ambassador && p.is_ambassador) {
+        const embed = new EmbedBuilder()
+          .setColor('#C9A84C')
+          .setTitle('🌟 Nouvel Ambassadeur DJOBI !')
+          .setDescription(`**${name}** rejoint l'élite des Ambassadeurs DJOBI !\n\nMerci pour ta confiance et ta loyauté. Bienvenue dans la famille.`)
+          .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
+          .setTimestamp()
+        await hallFameChannel.send({ embeds: [embed] })
+      }
+
+      if (!prev.is_royal_ambassador && p.is_royal_ambassador) {
+        const embed = new EmbedBuilder()
+          .setColor('#FFD700')
+          .setTitle('👑 Nouvel Ambassadeur Royal DJOBI !')
+          .setDescription(`**${name}** accède au rang suprême — **Ambassadeur Royal** !\n\nLe sommet de l'excellence DJOBI.`)
+          .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
+          .setTimestamp()
+        await hallFameChannel.send({ embeds: [embed] })
+      }
+
+      if (!prev.badge_diamond && p.badge_diamond) {
+        const embed = new EmbedBuilder()
+          .setColor('#B9F2FF')
+          .setTitle('💎 Badge Diamond débloqué !')
+          .setDescription(`**${name}** décroche le **Badge Diamond** DJOBI !\n\nPerformance exceptionnelle. La légende est en marche.`)
+          .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
+          .setTimestamp()
+        await hallFameChannel.send({ embeds: [embed] })
+      }
+
+      if (!prev.badge_diamond_pro && p.badge_diamond_pro) {
+        const embed = new EmbedBuilder()
+          .setColor('#FF00FF')
+          .setTitle('💎 Badge Diamond PRO débloqué !')
+          .setDescription(`**${name}** atteint le niveau ultime — **Diamond PRO** !\n\nUn seul mot : respect.`)
+          .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
+          .setTimestamp()
+        await hallFameChannel.send({ embeds: [embed] })
+      }
+    })
+    .subscribe((status) => {
+      console.log(`📡 Realtime profiles : ${status}`)
+    })
 
   // leader connu par tournoi en mémoire
   const tournamentLeaders = new Map()
@@ -171,6 +223,27 @@ client.once('ready', () => {
 
       if (t.status === 'closed') {
         await postClassementFinal(tournoisChannel, t)
+        // annonce du gagnant dans Hall of Fame
+        const { data: winner } = await supabase
+          .from('tournament_registrations')
+          .select('current_capital_usd, initial_capital_usd, profiles(username, display_name)')
+          .eq('tournament_id', t.id)
+          .eq('is_disqualified', false)
+          .order('current_capital_usd', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (winner) {
+          const wName = winner.profiles?.display_name || winner.profiles?.username || 'Joueur'
+          const wPnl = ((winner.current_capital_usd - winner.initial_capital_usd) / winner.initial_capital_usd * 100).toFixed(2)
+          const embed = new EmbedBuilder()
+            .setColor('#C9A84C')
+            .setTitle(`🏆 Vainqueur — ${t.name}`)
+            .setDescription(`**${wName}** remporte le tournoi **${t.name}** avec **+${wPnl}%** de gain !\n\nFélicitations au champion 🎉`)
+            .addFields({ name: '📊 Classement complet', value: '[djobicandle.com](https://djobicandle.com)', inline: false })
+            .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
+            .setTimestamp()
+          await hallFameChannel.send({ embeds: [embed] })
+        }
       }
     })
     .subscribe((status) => {
