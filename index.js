@@ -64,21 +64,28 @@ async function postClassementFinal(channel, tournoi) {
 }
 
 // ─── Bot prêt ───────────────────────────────────────────────
-client.once('ready', () => {
+client.once('ready', async () => {
   console.log(`✅ Bot connecté : ${client.user.tag}`)
   client.user.setActivity('djobicandle.com | Trade. Gagne. Vis.', {
     type: ActivityType.Watching
   })
 
-  const tournoisChannel = client.channels.cache.get(process.env.DISCORD_TOURNOIS_CHANNEL_ID)
+  async function fetchChannel(id) {
+    if (!id) return null
+    try { return await client.channels.fetch(id) } catch { return null }
+  }
+
+  const tournoisChannel = await fetchChannel(process.env.DISCORD_TOURNOIS_CHANNEL_ID)
   if (!tournoisChannel) {
     console.warn('⚠️ DISCORD_TOURNOIS_CHANNEL_ID introuvable')
     return
   }
 
-  const classementChannel = client.channels.cache.get(process.env.DISCORD_CLASSEMENT_CHANNEL_ID) || tournoisChannel
-  const hallFameChannel = client.channels.cache.get(process.env.DISCORD_HALLFAME_CHANNEL_ID) || tournoisChannel
-  const annoncesChannel = client.channels.cache.get(process.env.DISCORD_ANNONCES_CHANNEL_ID) || tournoisChannel
+  const classementChannel = (await fetchChannel(process.env.DISCORD_CLASSEMENT_CHANNEL_ID)) || tournoisChannel
+  const hallFameChannel   = (await fetchChannel(process.env.DISCORD_HALLFAME_CHANNEL_ID))   || tournoisChannel
+  const annoncesChannel   = (await fetchChannel(process.env.DISCORD_ANNONCES_CHANNEL_ID))   || tournoisChannel
+
+  console.log('📡 Channels chargés — démarrage Realtime...')
 
   // ─── Realtime djobi_infos — communiqués admin ────────────
   supabase
