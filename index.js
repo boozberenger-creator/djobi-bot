@@ -325,6 +325,55 @@ client.on('messageCreate', async (message) => {
     return
   }
 
+  // !verify
+  if (content.startsWith('!verify')) {
+    const phone = message.content.trim().split(/\s+/)[1]
+    if (!phone) {
+      await message.reply('Usage : `!verify +22601234567` — entre ton numéro de téléphone DJOBI')
+      return
+    }
+
+    const ROLE_LEADER      = '1505825959687749673'
+    const ROLE_AMBASSADEUR = '1505826830530383942'
+    const ROLE_DIAMOND     = '1505826909467050075'
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('username, display_name, stars_count, is_ambassador, badge_diamond, is_royal_ambassador')
+      .eq('phone', phone)
+      .maybeSingle()
+
+    if (!profile) {
+      await message.reply('❌ Numéro introuvable. Vérifie que c\'est le numéro utilisé sur **djobicandle.com**')
+      return
+    }
+
+    const member = message.member
+    const rolesAdded = []
+
+    if (profile.badge_diamond && !member.roles.cache.has(ROLE_DIAMOND)) {
+      await member.roles.add(ROLE_DIAMOND)
+      rolesAdded.push('💎 Diamond')
+    }
+    if (profile.stars_count >= 1 && !member.roles.cache.has(ROLE_LEADER)) {
+      await member.roles.add(ROLE_LEADER)
+      rolesAdded.push('⭐ Leader')
+    }
+    if ((profile.is_ambassador || profile.is_royal_ambassador) && !member.roles.cache.has(ROLE_AMBASSADEUR)) {
+      await member.roles.add(ROLE_AMBASSADEUR)
+      rolesAdded.push('🌟 Ambassadeur')
+    }
+
+    const name = profile.display_name || profile.username || 'Djobleur'
+
+    if (rolesAdded.length === 0) {
+      await message.reply(`✅ Compte **${name}** vérifié — aucun grade VIP atteint pour l'instant. Continue à jouer !`)
+    } else {
+      await message.reply(`✅ **${name}** vérifié ! Rôles attribués : ${rolesAdded.join(', ')}\n\nBienvenue dans l'élite DJOBI 🎉`)
+    }
+    return
+  }
+
   // !aide
   if (content === '!aide') {
     const embed = new EmbedBuilder()
