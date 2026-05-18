@@ -404,7 +404,14 @@ client.on('messageCreate', async (message) => {
       .setDescription(lines.join('\n'))
       .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
 
-    await message.reply({ embeds: [embed] })
+    try {
+      await message.author.send({ embeds: [embed] })
+      await message.reply('✅ Vérification terminée ! Résultat envoyé en message privé.')
+    } catch {
+      // DMs désactivés — répondre dans le salon quand même
+      await message.reply({ embeds: [embed] })
+    }
+    try { await message.delete() } catch {}
     return
   }
 
