@@ -366,28 +366,29 @@ client.on('messageCreate', async (message) => {
     }
 
     const member = message.member
-    const rolesAdded = []
-
-    if (profile.badge_diamond && !member.roles.cache.has(ROLE_DIAMOND)) {
-      await member.roles.add(ROLE_DIAMOND)
-      rolesAdded.push('💎 Diamond')
-    }
-    if (profile.stars_count >= 1 && !member.roles.cache.has(ROLE_LEADER)) {
-      await member.roles.add(ROLE_LEADER)
-      rolesAdded.push('⭐ Leader')
-    }
-    if ((profile.is_ambassador || profile.is_royal_ambassador) && !member.roles.cache.has(ROLE_AMBASSADEUR)) {
-      await member.roles.add(ROLE_AMBASSADEUR)
-      rolesAdded.push('🌟 Ambassadeur')
-    }
-
     const name = profile.display_name || profile.username || 'Djobleur'
 
-    if (rolesAdded.length === 0) {
-      await message.reply(`✅ Compte **${name}** vérifié — aucun grade VIP atteint pour l'instant. Continue à jouer !`)
-    } else {
-      await message.reply(`✅ **${name}** vérifié ! Rôles attribués : ${rolesAdded.join(', ')}\n\nBienvenue dans l'élite DJOBI 🎉`)
-    }
+    const hasLeader      = profile.stars_count >= 1
+    const hasAmbassadeur = profile.is_ambassador || profile.is_royal_ambassador
+    const hasDiamond     = profile.badge_diamond
+
+    const rolesAdded = []
+    if (hasDiamond     && !member.roles.cache.has(ROLE_DIAMOND))     { await member.roles.add(ROLE_DIAMOND);     rolesAdded.push('💎 Diamond') }
+    if (hasLeader      && !member.roles.cache.has(ROLE_LEADER))      { await member.roles.add(ROLE_LEADER);      rolesAdded.push('⭐ Leader') }
+    if (hasAmbassadeur && !member.roles.cache.has(ROLE_AMBASSADEUR)) { await member.roles.add(ROLE_AMBASSADEUR); rolesAdded.push('🌟 Ambassadeur') }
+
+    const lines = []
+    lines.push(hasDiamond     ? (member.roles.cache.has(ROLE_DIAMOND)     && !rolesAdded.includes('💎 Diamond')     ? '💎 Diamond — **déjà actif**' : '💎 Diamond — ✅ activé')     : '💎 Diamond — 🔒 non atteint')
+    lines.push(hasLeader      ? (member.roles.cache.has(ROLE_LEADER)      && !rolesAdded.includes('⭐ Leader')      ? '⭐ Leader — **déjà actif**' : '⭐ Leader — ✅ activé')      : '⭐ Leader — 🔒 non atteint (1 étoile requise)')
+    lines.push(hasAmbassadeur ? (member.roles.cache.has(ROLE_AMBASSADEUR) && !rolesAdded.includes('🌟 Ambassadeur') ? '🌟 Ambassadeur — **déjà actif**' : '🌟 Ambassadeur — ✅ activé') : '🌟 Ambassadeur — 🔒 non atteint')
+
+    const embed = new EmbedBuilder()
+      .setColor('#C9A84C')
+      .setTitle(`✅ ${name} — Vérification DJOBI`)
+      .setDescription(lines.join('\n'))
+      .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
+
+    await message.reply({ embeds: [embed] })
     return
   }
 
