@@ -76,6 +76,57 @@ client.once('ready', () => {
     return
   }
 
+  // leader connu par tournoi en mémoire
+  const tournamentLeaders = new Map()
+
+  supabase
+    .channel('registrations-realtime')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tournament_registrations' }, async (payload) => {
+      const tournamentId = payload.new.tournament_id
+
+      const { data: tournoi } = await supabase
+        .from('tournaments')
+        .select('id, name')
+        .eq('id', tournamentId)
+        .eq('status', 'active')
+        .maybeSingle()
+
+      if (!tournoi) return
+
+      const { data: top } = await supabase
+        .from('tournament_registrations')
+        .select('user_id, current_capital_usd, initial_capital_usd, profiles(username, display_name)')
+        .eq('tournament_id', tournamentId)
+        .eq('is_disqualified', false)
+        .order('current_capital_usd', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (!top) return
+
+      const prevLeader = tournamentLeaders.get(tournamentId)
+      tournamentLeaders.set(tournamentId, top.user_id)
+
+      // initialisation silencieuse — pas de post au 1er check
+      if (!prevLeader || prevLeader === top.user_id) return
+
+      const name = top.profiles?.display_name || top.profiles?.username || 'Joueur'
+      const pnl = ((top.current_capital_usd - top.initial_capital_usd) / top.initial_capital_usd * 100).toFixed(2)
+
+      const embed = new EmbedBuilder()
+        .setColor('#FFD700')
+        .setTitle('👑 Nouveau leader !')
+        .setDescription(`**${name}** prend la tête de **${tournoi.name}** avec **+${pnl}%** de gain !\n\nSaura-t-il tenir jusqu\'à la fin ?`)
+        .addFields({ name: '📊 Classement complet', value: '[djobicandle.com](https://djobicandle.com)', inline: false })
+        .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
+        .setTimestamp()
+
+      await tournoisChannel.send({ embeds: [embed] })
+    })
+    .subscribe((status) => {
+      console.log(`📡 Realtime registrations : ${status}`)
+    })
+
   supabase
     .channel('tournaments-realtime')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tournaments' }, async (payload) => {
