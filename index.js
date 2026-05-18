@@ -76,6 +76,8 @@ client.once('ready', () => {
     return
   }
 
+  const classementChannel = client.channels.cache.get(process.env.DISCORD_CLASSEMENT_CHANNEL_ID) || tournoisChannel
+
   // leader connu par tournoi en mémoire
   const tournamentLeaders = new Map()
 
@@ -121,7 +123,7 @@ client.once('ready', () => {
         .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
         .setTimestamp()
 
-      await tournoisChannel.send({ embeds: [embed] })
+      await classementChannel.send({ embeds: [embed] })
     })
     .subscribe((status) => {
       console.log(`📡 Realtime registrations : ${status}`)
