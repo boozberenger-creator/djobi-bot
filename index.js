@@ -332,9 +332,9 @@ client.on('messageCreate', async (message) => {
       await message.reply(`Cette commande est réservée au salon <#${VERIFY_CHANNEL_ID}>`)
       return
     }
-    const pseudo = message.content.trim().split(/\s+/)[1]
+    const pseudo = message.content.trim().replace(/^!verify\s*/i, '').trim()
     if (!pseudo) {
-      await message.reply('Usage : `!verify ton_pseudo` — entre ton pseudo DJOBI (celui affiché sur le classement)')
+      await message.reply('Usage : `!verify ton surnom` — entre ton surnom DJOBI (celui affiché sur le classement)')
       return
     }
 
