@@ -1,5 +1,13 @@
 require('dotenv').config()
 const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require('discord.js')
+const http = require('http')
+
+// Keep-alive : empêche Render Free de s'endormir
+const server = http.createServer((req, res) => {
+  res.writeHead(200)
+  res.end('DJOBI Bot en ligne')
+})
+server.listen(process.env.PORT || 3000)
 
 const client = new Client({
   intents: [
