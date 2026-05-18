@@ -342,26 +342,36 @@ client.on('messageCreate', async (message) => {
     const ROLE_AMBASSADEUR = '1505826830530383942'
     const ROLE_DIAMOND     = '1505826909467050075'
 
-    // Cherche d'abord par username, ensuite par display_name
+    // Cherche par username puis display_name
     let profile = null
-    const { data: byUsername } = await supabase
-      .from('profiles')
-      .select('username, display_name, stars_count, is_ambassador, badge_diamond, is_royal_ambassador')
-      .ilike('username', pseudo)
-      .maybeSingle()
-    if (byUsername) {
-      profile = byUsername
-    } else {
-      const { data: byName } = await supabase
+    try {
+      const { data: byUsername, error: e1 } = await supabase
         .from('profiles')
         .select('username, display_name, stars_count, is_ambassador, badge_diamond, is_royal_ambassador')
-        .ilike('display_name', pseudo)
+        .ilike('username', pseudo)
+        .limit(1)
         .maybeSingle()
-      profile = byName
+      if (e1) console.error('verify byUsername error:', e1)
+      if (byUsername) {
+        profile = byUsername
+      } else {
+        const { data: byName, error: e2 } = await supabase
+          .from('profiles')
+          .select('username, display_name, stars_count, is_ambassador, badge_diamond, is_royal_ambassador')
+          .ilike('display_name', pseudo)
+          .limit(1)
+          .maybeSingle()
+        if (e2) console.error('verify byName error:', e2)
+        profile = byName
+      }
+    } catch (err) {
+      console.error('verify query crash:', err)
+      await message.reply('❌ Erreur serveur, réessaie dans quelques secondes.')
+      return
     }
 
     if (!profile) {
-      await message.reply(`❌ Pseudo **${pseudo}** introuvable. Vérifie ton pseudo sur **djobicandle.com/profil**`)
+      await message.reply(`❌ Surnom **${pseudo}** introuvable. Vérifie ton surnom exact sur **djobicandle.com/profil**`)
       return
     }
 
