@@ -78,6 +78,38 @@ client.once('ready', () => {
 
   const classementChannel = client.channels.cache.get(process.env.DISCORD_CLASSEMENT_CHANNEL_ID) || tournoisChannel
   const hallFameChannel = client.channels.cache.get(process.env.DISCORD_HALLFAME_CHANNEL_ID) || tournoisChannel
+  const annoncesChannel = client.channels.cache.get(process.env.DISCORD_ANNONCES_CHANNEL_ID) || tournoisChannel
+
+  // ─── Realtime djobi_infos — communiqués admin ────────────
+  supabase
+    .channel('infos-realtime')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'djobi_infos' }, async (payload) => {
+      const info = payload.new
+      if (!info.is_published) return
+      const embed = new EmbedBuilder()
+        .setColor('#C9A84C')
+        .setTitle(`📢 ${info.title}`)
+        .setDescription(info.content?.replace(/<[^>]*>/g, '').slice(0, 4000) || '')
+        .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
+        .setTimestamp()
+      if (info.image_url) embed.setImage(info.image_url)
+      await annoncesChannel.send({ embeds: [embed] })
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'djobi_infos' }, async (payload) => {
+      const { new: info, old: prev } = payload
+      if (prev.is_published || !info.is_published) return
+      const embed = new EmbedBuilder()
+        .setColor('#C9A84C')
+        .setTitle(`📢 ${info.title}`)
+        .setDescription(info.content?.replace(/<[^>]*>/g, '').slice(0, 4000) || '')
+        .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
+        .setTimestamp()
+      if (info.image_url) embed.setImage(info.image_url)
+      await annoncesChannel.send({ embeds: [embed] })
+    })
+    .subscribe((status) => {
+      console.log(`📡 Realtime djobi_infos : ${status}`)
+    })
 
   // ─── Realtime profiles — ambassadeurs / badges ───────────
   supabase
