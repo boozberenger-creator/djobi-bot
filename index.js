@@ -383,9 +383,15 @@ client.on('messageCreate', async (message) => {
     const hasDiamond     = profile.badge_diamond
 
     const rolesAdded = []
-    if (hasDiamond     && !member.roles.cache.has(ROLE_DIAMOND))     { await member.roles.add(ROLE_DIAMOND);     rolesAdded.push('💎 Diamond') }
-    if (hasLeader      && !member.roles.cache.has(ROLE_LEADER))      { await member.roles.add(ROLE_LEADER);      rolesAdded.push('⭐ Leader') }
-    if (hasAmbassadeur && !member.roles.cache.has(ROLE_AMBASSADEUR)) { await member.roles.add(ROLE_AMBASSADEUR); rolesAdded.push('🌟 Ambassadeur') }
+    try {
+      if (hasDiamond     && !member.roles.cache.has(ROLE_DIAMOND))     { await member.roles.add(ROLE_DIAMOND);     rolesAdded.push('💎 Diamond') }
+      if (hasLeader      && !member.roles.cache.has(ROLE_LEADER))      { await member.roles.add(ROLE_LEADER);      rolesAdded.push('⭐ Leader') }
+      if (hasAmbassadeur && !member.roles.cache.has(ROLE_AMBASSADEUR)) { await member.roles.add(ROLE_AMBASSADEUR); rolesAdded.push('🌟 Ambassadeur') }
+    } catch (roleErr) {
+      console.error('Erreur attribution rôle:', roleErr.message)
+      await message.reply('⚠️ Compte vérifié mais impossible d\'attribuer les rôles — le rôle du bot doit être au-dessus des rôles membres dans la hiérarchie Discord.')
+      return
+    }
 
     const lines = []
     lines.push(hasDiamond     ? (member.roles.cache.has(ROLE_DIAMOND)     && !rolesAdded.includes('💎 Diamond')     ? '💎 Diamond — **déjà actif**' : '💎 Diamond — ✅ activé')     : '💎 Diamond — 🔒 non atteint')
