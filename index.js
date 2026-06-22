@@ -268,6 +268,7 @@ client.once('ready', async () => {
 
 // ─── Commandes ──────────────────────────────────────────────
 client.on('messageCreate', async (message) => {
+  console.log(`[MSG] #${message.channel?.name} | ${message.author?.tag} : ${message.content?.substring(0, 50)}`)
   if (message.author.bot) return
   const content = message.content.toLowerCase().trim()
 
