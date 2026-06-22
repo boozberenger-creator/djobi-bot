@@ -352,89 +352,70 @@ client.on('messageCreate', async (message) => {
     return
   }
 
-  // !verify — fonctionne dans tout salon (restriction levée temporairement)
+  // !verify
   if (content.startsWith('!verify')) {
     const pseudo = message.content.trim().replace(/^!verify\s*/i, '').trim()
-    console.log(`[VERIFY] channel=${message.channel.id} pseudo="${pseudo}"`)
-    if (!pseudo) {
-      await message.reply('Usage : `!verify ton surnom` — entre ton surnom DJOBI (celui affiché sur le classement)')
-      return
-    }
-
-    const ROLE_LEADER      = '1505825959687749673'
-    const ROLE_AMBASSADEUR = '1505826830530383942'
-    const ROLE_DIAMOND     = '1505826909467050075'
-
-    // Cherche par username puis display_name
-    let profile = null
+    console.log(`[VERIFY] pseudo="${pseudo}" channel=${message.channel.id}`)
     try {
-      const { data: byUsername, error: e1 } = await supabase
-        .from('profiles')
+      if (!pseudo) {
+        await message.reply('Usage : `!verify TonSurnom` — entre ton surnom DJOBI exact')
+        return
+      }
+
+      const ROLE_LEADER      = '1505825959687749673'
+      const ROLE_AMBASSADEUR = '1505826830530383942'
+      const ROLE_DIAMOND     = '1505826909467050075'
+
+      // Cherche par username puis display_name
+      let profile = null
+      const { data: byUsername } = await supabase.from('profiles')
         .select('username, display_name, stars_count, is_ambassador, badge_diamond, is_royal_ambassador')
-        .ilike('username', pseudo)
-        .limit(1)
-        .maybeSingle()
-      if (e1) console.error('verify byUsername error:', e1)
+        .ilike('username', pseudo).limit(1).maybeSingle()
       if (byUsername) {
         profile = byUsername
       } else {
-        const { data: byName, error: e2 } = await supabase
-          .from('profiles')
+        const { data: byName } = await supabase.from('profiles')
           .select('username, display_name, stars_count, is_ambassador, badge_diamond, is_royal_ambassador')
-          .ilike('display_name', pseudo)
-          .limit(1)
-          .maybeSingle()
-        if (e2) console.error('verify byName error:', e2)
+          .ilike('display_name', pseudo).limit(1).maybeSingle()
         profile = byName
       }
-    } catch (err) {
-      console.error('verify query crash:', err)
-      await message.reply('❌ Erreur serveur, réessaie dans quelques secondes.')
-      return
-    }
+      console.log(`[VERIFY] profile trouvé:`, JSON.stringify(profile))
 
-    if (!profile) {
-      await message.reply(`❌ Surnom **${pseudo}** introuvable. Vérifie ton surnom exact sur **djobicandle.com/profil**`)
-      return
-    }
+      if (!profile) {
+        await message.reply(`❌ Surnom **${pseudo}** introuvable sur djobicandle.com`)
+        return
+      }
 
-    const member = message.member
-    const name = profile.display_name || profile.username || 'Djobleur'
+      const member = message.member
+      const name = profile.display_name || profile.username || 'Djobleur'
+      const hasLeader      = (profile.stars_count || 0) >= 1
+      const hasAmbassadeur = profile.is_ambassador || profile.is_royal_ambassador
+      const hasDiamond     = profile.badge_diamond
 
-    const hasLeader      = profile.stars_count >= 1
-    const hasAmbassadeur = profile.is_ambassador || profile.is_royal_ambassador
-    const hasDiamond     = profile.badge_diamond
+      // Attribution rôles
+      const rolesAdded = []
+      if (hasDiamond     && !member.roles.cache.has(ROLE_DIAMOND))     { try { await member.roles.add(ROLE_DIAMOND);     rolesAdded.push('💎 Diamond') }     catch(e) { console.error('role diamond:', e.message) } }
+      if (hasLeader      && !member.roles.cache.has(ROLE_LEADER))      { try { await member.roles.add(ROLE_LEADER);      rolesAdded.push('⭐ Leader') }      catch(e) { console.error('role leader:', e.message) } }
+      if (hasAmbassadeur && !member.roles.cache.has(ROLE_AMBASSADEUR)) { try { await member.roles.add(ROLE_AMBASSADEUR); rolesAdded.push('🌟 Ambassadeur') } catch(e) { console.error('role ambass:', e.message) } }
 
-    const rolesAdded = []
-    try {
-      if (hasDiamond     && !member.roles.cache.has(ROLE_DIAMOND))     { await member.roles.add(ROLE_DIAMOND);     rolesAdded.push('💎 Diamond') }
-      if (hasLeader      && !member.roles.cache.has(ROLE_LEADER))      { await member.roles.add(ROLE_LEADER);      rolesAdded.push('⭐ Leader') }
-      if (hasAmbassadeur && !member.roles.cache.has(ROLE_AMBASSADEUR)) { await member.roles.add(ROLE_AMBASSADEUR); rolesAdded.push('🌟 Ambassadeur') }
-    } catch (roleErr) {
-      console.error('Erreur attribution rôle:', roleErr.message)
-      await message.reply('⚠️ Compte vérifié mais impossible d\'attribuer les rôles — le rôle du bot doit être au-dessus des rôles membres dans la hiérarchie Discord.')
-      return
-    }
+      const lines = [
+        hasDiamond     ? '💎 Diamond — ✅'      : '💎 Diamond — 🔒 non atteint',
+        hasLeader      ? '⭐ Leader — ✅'       : '⭐ Leader — 🔒 (1 étoile requise)',
+        hasAmbassadeur ? '🌟 Ambassadeur — ✅' : '🌟 Ambassadeur — 🔒 non atteint',
+      ]
 
-    const lines = []
-    lines.push(hasDiamond     ? (member.roles.cache.has(ROLE_DIAMOND)     && !rolesAdded.includes('💎 Diamond')     ? '💎 Diamond — **déjà actif**' : '💎 Diamond — ✅ activé')     : '💎 Diamond — 🔒 non atteint')
-    lines.push(hasLeader      ? (member.roles.cache.has(ROLE_LEADER)      && !rolesAdded.includes('⭐ Leader')      ? '⭐ Leader — **déjà actif**' : '⭐ Leader — ✅ activé')      : '⭐ Leader — 🔒 non atteint (1 étoile requise)')
-    lines.push(hasAmbassadeur ? (member.roles.cache.has(ROLE_AMBASSADEUR) && !rolesAdded.includes('🌟 Ambassadeur') ? '🌟 Ambassadeur — **déjà actif**' : '🌟 Ambassadeur — ✅ activé') : '🌟 Ambassadeur — 🔒 non atteint')
+      const embed = new EmbedBuilder()
+        .setColor('#C9A84C')
+        .setTitle(`✅ ${name} — Vérification DJOBI`)
+        .setDescription(lines.join('\n'))
+        .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
 
-    const embed = new EmbedBuilder()
-      .setColor('#C9A84C')
-      .setTitle(`✅ ${name} — Vérification DJOBI`)
-      .setDescription(lines.join('\n'))
-      .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
-
-    try {
-      await message.author.send({ embeds: [embed] })
-      await message.reply('✅ Vérification terminée ! Résultat envoyé en message privé.')
-    } catch {
-      // DMs désactivés — répondre dans le salon quand même
       await message.reply({ embeds: [embed] })
+      console.log(`[VERIFY] réponse envoyée pour ${name}`)
+    } catch (err) {
+      console.error('[VERIFY] erreur globale:', err.message)
+      try { await message.reply(`❌ Erreur : ${err.message}`) } catch {}
     }
-    try { await message.delete() } catch {}
     return
   }
 
