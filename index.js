@@ -354,11 +354,17 @@ client.on('messageCreate', async (message) => {
 
   // !verify
   if (content.startsWith('!verify')) {
-    const pseudo = message.content.trim().replace(/^!verify\s*/i, '').trim()
+    console.log(`[VERIFY-HIT] content="${content}"`)
+    await message.reply('🔧 verify reçu, contenu: `' + content + '`')
+    return
+  }
+
+  if (content.startsWith('!verify_go')) {
+    const pseudo = message.content.trim().replace(/^!verify_go\s*/i, '').trim()
     console.log(`[VERIFY] pseudo="${pseudo}" channel=${message.channel.id}`)
     try {
       if (!pseudo) {
-        await message.reply('Usage : `!verify TonSurnom` — entre ton surnom DJOBI exact')
+        await message.reply('Usage : `!verify_go TonSurnom` — entre ton surnom DJOBI exact')
         return
       }
 
