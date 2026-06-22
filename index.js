@@ -354,8 +354,13 @@ client.on('messageCreate', async (message) => {
 
   // !verify
   if (content.startsWith('!verify')) {
-    console.log(`[VERIFY-HIT] content="${content}"`)
-    await message.reply('🔧 verify reçu, contenu: `' + content + '`')
+    console.log(`[VERIFY-HIT] content="${content}" channel=${message.channel.id}`)
+    try {
+      await message.reply('🔧 verify reçu, contenu: `' + content + '`')
+      console.log('[VERIFY-HIT] reply envoyé OK')
+    } catch (e) {
+      console.error('[VERIFY-HIT] reply FAILED:', e.message, e.code)
+    }
     return
   }
 
@@ -437,7 +442,12 @@ client.on('messageCreate', async (message) => {
         { name: '!support', value: 'Contacter le support', inline: true },
       )
       .setFooter({ text: 'DJOBI • Trade. Gagne. Vis.' })
-    await message.reply({ embeds: [embed] })
+    try {
+      await message.reply({ embeds: [embed] })
+      console.log('[AIDE] reply envoyé OK')
+    } catch (e) {
+      console.error('[AIDE] reply FAILED:', e.message, e.code)
+    }
     return
   }
 
