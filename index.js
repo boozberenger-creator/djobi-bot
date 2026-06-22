@@ -352,14 +352,10 @@ client.on('messageCreate', async (message) => {
     return
   }
 
-  // !verify — salon #vérification uniquement
+  // !verify — fonctionne dans tout salon (restriction levée temporairement)
   if (content.startsWith('!verify')) {
-    const VERIFY_CHANNEL_ID = '1505834881127546960'
-    if (message.channel.id !== VERIFY_CHANNEL_ID) {
-      await message.reply(`Cette commande est réservée au salon <#${VERIFY_CHANNEL_ID}>`)
-      return
-    }
     const pseudo = message.content.trim().replace(/^!verify\s*/i, '').trim()
+    console.log(`[VERIFY] channel=${message.channel.id} pseudo="${pseudo}"`)
     if (!pseudo) {
       await message.reply('Usage : `!verify ton surnom` — entre ton surnom DJOBI (celui affiché sur le classement)')
       return
