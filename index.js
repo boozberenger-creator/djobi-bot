@@ -476,4 +476,8 @@ client.on('messageCreate', async (message) => {
 })
 
 // ─── Démarrage ──────────────────────────────────────────────
+console.log('🔑 DISCORD_TOKEN présent:', !!process.env.DISCORD_TOKEN)
+console.log('🔑 SUPABASE_URL présent:', !!process.env.SUPABASE_URL)
 client.login(process.env.DISCORD_TOKEN)
+  .then(() => console.log('✅ Discord login OK'))
+  .catch(err => console.error('❌ DISCORD LOGIN FAILED:', err.message))
