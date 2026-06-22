@@ -473,6 +473,13 @@ client.on('messageCreate', async (message) => {
 // ─── Démarrage ──────────────────────────────────────────────
 console.log('🔑 DISCORD_TOKEN présent:', !!process.env.DISCORD_TOKEN)
 console.log('🔑 SUPABASE_URL présent:', !!process.env.SUPABASE_URL)
+
+// Si Discord ne répond pas en 90s → redémarrage forcé (Render relance)
+const loginTimeout = setTimeout(() => {
+  console.error('❌ Discord login timeout (90s) — redémarrage forcé')
+  process.exit(1)
+}, 90_000)
+
 client.login(process.env.DISCORD_TOKEN)
-  .then(() => console.log('✅ Discord login OK'))
-  .catch(err => console.error('❌ DISCORD LOGIN FAILED:', err.message))
+  .then(() => { clearTimeout(loginTimeout); console.log('✅ Discord login OK') })
+  .catch(err => { clearTimeout(loginTimeout); console.error('❌ DISCORD LOGIN FAILED:', err.message); process.exit(1) })
