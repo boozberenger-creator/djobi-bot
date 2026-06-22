@@ -354,22 +354,11 @@ client.on('messageCreate', async (message) => {
 
   // !verify
   if (content.startsWith('!verify')) {
-    console.log(`[VERIFY-HIT] content="${content}" channel=${message.channel.id}`)
-    try {
-      await message.reply('🔧 verify reçu, contenu: `' + content + '`')
-      console.log('[VERIFY-HIT] reply envoyé OK')
-    } catch (e) {
-      console.error('[VERIFY-HIT] reply FAILED:', e.message, e.code)
-    }
-    return
-  }
-
-  if (content.startsWith('!verify_go')) {
-    const pseudo = message.content.trim().replace(/^!verify_go\s*/i, '').trim()
+    const pseudo = message.content.trim().replace(/^!verify\s*/i, '').trim()
     console.log(`[VERIFY] pseudo="${pseudo}" channel=${message.channel.id}`)
     try {
       if (!pseudo) {
-        await message.reply('Usage : `!verify_go TonSurnom` — entre ton surnom DJOBI exact')
+        await message.reply('Usage : `!verify TonSurnom` — entre ton surnom DJOBI exact')
         return
       }
 
@@ -377,7 +366,6 @@ client.on('messageCreate', async (message) => {
       const ROLE_AMBASSADEUR = '1505826830530383942'
       const ROLE_DIAMOND     = '1505826909467050075'
 
-      // Cherche par username puis display_name
       let profile = null
       const { data: byUsername } = await supabase.from('profiles')
         .select('username, display_name, stars_count, is_ambassador, badge_diamond, is_royal_ambassador')
@@ -390,7 +378,6 @@ client.on('messageCreate', async (message) => {
           .ilike('display_name', pseudo).limit(1).maybeSingle()
         profile = byName
       }
-      console.log(`[VERIFY] profile trouvé:`, JSON.stringify(profile))
 
       if (!profile) {
         await message.reply(`❌ Surnom **${pseudo}** introuvable sur djobicandle.com`)
@@ -403,16 +390,14 @@ client.on('messageCreate', async (message) => {
       const hasAmbassadeur = profile.is_ambassador || profile.is_royal_ambassador
       const hasDiamond     = profile.badge_diamond
 
-      // Attribution rôles
-      const rolesAdded = []
-      if (hasDiamond     && !member.roles.cache.has(ROLE_DIAMOND))     { try { await member.roles.add(ROLE_DIAMOND);     rolesAdded.push('💎 Diamond') }     catch(e) { console.error('role diamond:', e.message) } }
-      if (hasLeader      && !member.roles.cache.has(ROLE_LEADER))      { try { await member.roles.add(ROLE_LEADER);      rolesAdded.push('⭐ Leader') }      catch(e) { console.error('role leader:', e.message) } }
-      if (hasAmbassadeur && !member.roles.cache.has(ROLE_AMBASSADEUR)) { try { await member.roles.add(ROLE_AMBASSADEUR); rolesAdded.push('🌟 Ambassadeur') } catch(e) { console.error('role ambass:', e.message) } }
+      if (hasDiamond)     { try { if (!member.roles.cache.has(ROLE_DIAMOND))     await member.roles.add(ROLE_DIAMOND)     } catch(e) { console.error('role diamond:', e.message) } }
+      if (hasLeader)      { try { if (!member.roles.cache.has(ROLE_LEADER))      await member.roles.add(ROLE_LEADER)      } catch(e) { console.error('role leader:', e.message) } }
+      if (hasAmbassadeur) { try { if (!member.roles.cache.has(ROLE_AMBASSADEUR)) await member.roles.add(ROLE_AMBASSADEUR) } catch(e) { console.error('role ambass:', e.message) } }
 
       const lines = [
-        hasDiamond     ? '💎 Diamond — ✅'      : '💎 Diamond — 🔒 non atteint',
-        hasLeader      ? '⭐ Leader — ✅'       : '⭐ Leader — 🔒 (1 étoile requise)',
-        hasAmbassadeur ? '🌟 Ambassadeur — ✅' : '🌟 Ambassadeur — 🔒 non atteint',
+        hasDiamond     ? '💎 Diamond — ✅'                  : '💎 Diamond — 🔒 non atteint',
+        hasLeader      ? '⭐ Leader — ✅'                   : '⭐ Leader — 🔒 (1 étoile requise)',
+        hasAmbassadeur ? '🌟 Ambassadeur — ✅'             : '🌟 Ambassadeur — 🔒 non atteint',
       ]
 
       const embed = new EmbedBuilder()
