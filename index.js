@@ -42,8 +42,15 @@ const client = new Client({
 })
 
 // ─── Helpers ────────────────────────────────────────────────
-function prixFcfa(centimes) {
-  return `${Math.round(centimes / 100).toLocaleString('fr-FR')} FCFA`
+function prixFcfa(fcfa) {
+  return `${Math.round(fcfa).toLocaleString('fr-FR')} FCFA`
+}
+
+function poolStr(playerPool, guaranteedPool) {
+  const effective = Math.max(playerPool || 0, guaranteedPool || 0)
+  if (effective >= 1_000_000) return `${(effective / 1_000_000).toFixed(1)}M FCFA`
+  if (effective >= 1_000) return `${Math.round(effective / 1_000)}K FCFA`
+  return `${effective.toLocaleString('fr-FR')} FCFA`
 }
 
 function stripHtml(html) {
@@ -62,11 +69,10 @@ function stripHtml(html) {
 
 async function postClassementFinal(channel, tournoi) {
   const { data: top } = await supabase
-    .from('tournament_registrations')
-    .select('current_capital_usd, initial_capital_usd, profiles(username, display_name)')
+    .from('public_rankings')
+    .select('display_name, username, gain_percentage')
     .eq('tournament_id', tournoi.id)
-    .eq('is_disqualified', false)
-    .order('current_capital_usd', { ascending: false })
+    .order('gain_percentage', { ascending: false })
     .limit(5)
 
   const embed = new EmbedBuilder()
@@ -79,8 +85,8 @@ async function postClassementFinal(channel, tournoi) {
   if (top && top.length > 0) {
     const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣']
     const lines = top.map((r, i) => {
-      const name = r.profiles?.display_name || r.profiles?.username || 'Joueur'
-      const pnl = ((r.current_capital_usd - r.initial_capital_usd) / r.initial_capital_usd * 100).toFixed(2)
+      const name = r.display_name || r.username || 'Joueur'
+      const pnl = parseFloat(r.gain_percentage).toFixed(2)
       const sign = pnl >= 0 ? '+' : ''
       return `${medals[i]} **${name}** — ${sign}${pnl}%`
     }).join('\n')
@@ -155,13 +161,13 @@ async function handleWebhook(payload) {
         await postClassementFinal(ch, record)
         if (hf) {
           const { data: winner } = await supabase
-            .from('tournament_registrations')
-            .select('current_capital_usd, initial_capital_usd, profiles(username, display_name)')
-            .eq('tournament_id', record.id).eq('is_disqualified', false)
-            .order('current_capital_usd', { ascending: false }).limit(1).maybeSingle()
+            .from('public_rankings')
+            .select('display_name, username, gain_percentage')
+            .eq('tournament_id', record.id)
+            .order('gain_percentage', { ascending: false }).limit(1).maybeSingle()
           if (winner) {
-            const wName = winner.profiles?.display_name || winner.profiles?.username || 'Joueur'
-            const wPnl = ((winner.current_capital_usd - winner.initial_capital_usd) / winner.initial_capital_usd * 100).toFixed(2)
+            const wName = winner.display_name || winner.username || 'Joueur'
+            const wPnl = parseFloat(winner.gain_percentage).toFixed(2)
             const embed = new EmbedBuilder().setColor('#C9A84C')
               .setTitle(`🏆 Vainqueur — ${record.name}`)
               .setDescription(`**${wName}** remporte **${record.name}** avec **+${wPnl}%** !\n\nFélicitations au champion 🎉`)
@@ -206,18 +212,18 @@ async function handleWebhook(payload) {
     const tournamentId = record.tournament_id
     const { data: tournoi } = await supabase.from('tournaments').select('id, name').eq('id', tournamentId).eq('status', 'active').maybeSingle()
     if (!tournoi) return
-    const { data: top } = await supabase.from('tournament_registrations')
-      .select('user_id, current_capital_usd, initial_capital_usd, profiles(username, display_name)')
-      .eq('tournament_id', tournamentId).eq('is_disqualified', false)
-      .order('current_capital_usd', { ascending: false }).limit(1).maybeSingle()
+    const { data: top } = await supabase.from('public_rankings')
+      .select('user_id, display_name, username, gain_percentage')
+      .eq('tournament_id', tournamentId)
+      .order('gain_percentage', { ascending: false }).limit(1).maybeSingle()
     if (!top) return
     const prevLeader = prevStates.get(tournamentId)
     prevStates.set(tournamentId, top.user_id)
     if (!prevLeader || prevLeader === top.user_id) return
     const ch = await getChannel('DISCORD_CLASSEMENT_CHANNEL_ID', 'DISCORD_TOURNOIS_CHANNEL_ID')
     if (!ch) return
-    const name = top.profiles?.display_name || top.profiles?.username || 'Joueur'
-    const pnl = ((top.current_capital_usd - top.initial_capital_usd) / top.initial_capital_usd * 100).toFixed(2)
+    const name = top.display_name || top.username || 'Joueur'
+    const pnl = parseFloat(top.gain_percentage).toFixed(2)
     const embed = new EmbedBuilder().setColor('#FFD700').setTitle('👑 Nouveau leader !')
       .setDescription(`**${name}** prend la tête de **${tournoi.name}** avec **+${pnl}%** !`)
       .addFields({ name: '📊 Classement complet', value: '[djobicandle.com](https://djobicandle.com)', inline: false })
@@ -227,13 +233,37 @@ async function handleWebhook(payload) {
 }
 
 // ─── Bot prêt ───────────────────────────────────────────────
-client.once('ready', () => {
+client.once('ready', async () => {
   console.log(`✅ Bot connecté : ${client.user.tag}`)
   console.log('📡 Notifs via Database Webhooks HTTP')
   client.user.setActivity('djobicandle.com | Trade. Gagne. Vis.', {
     type: ActivityType.Watching
   })
 
+  // Initialiser prevStates au démarrage pour éviter de rater le 1er changement de leader
+  try {
+    const { data: actifs } = await supabase
+      .from('tournaments')
+      .select('id')
+      .eq('status', 'active')
+    if (actifs && actifs.length > 0) {
+      for (const t of actifs) {
+        const { data: top } = await supabase
+          .from('public_rankings')
+          .select('user_id')
+          .eq('tournament_id', t.id)
+          .order('gain_percentage', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (top) {
+          prevStates.set(t.id, top.user_id)
+          console.log(`📊 Leader chargé pour tournoi ${t.id}: ${top.user_id}`)
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Erreur init prevStates:', e.message)
+  }
 })
 
 // ─── Commandes ──────────────────────────────────────────────
@@ -245,7 +275,7 @@ client.on('messageCreate', async (message) => {
   if (content === '!tournoi') {
     const { data: tournois } = await supabase
       .from('tournaments')
-      .select('name, type, status, entry_price_fcfa, guaranteed_pool_fcfa, current_participants, max_participants, starts_at, ends_at')
+      .select('name, type, status, entry_price_fcfa, player_pool_fcfa, guaranteed_pool_fcfa, current_participants, max_participants, starts_at, ends_at')
       .in('status', ['open', 'active'])
       .order('starts_at', { ascending: true })
       .limit(3)
@@ -261,15 +291,12 @@ client.on('messageCreate', async (message) => {
     } else {
       embed.setDescription('Rejoins l\'arène et prouve ta valeur !')
       for (const t of tournois) {
-        const pool = t.guaranteed_pool_fcfa > 0
-          ? `${Math.round(t.guaranteed_pool_fcfa / 100).toLocaleString('fr-FR')} FCFA garanti`
-          : `Pool en cours`
-        const prix = `${Math.round(t.entry_price_fcfa / 100).toLocaleString('fr-FR')} FCFA`
+        const pool = poolStr(t.player_pool_fcfa, t.guaranteed_pool_fcfa)
         const status = t.status === 'active' ? '🔴 EN COURS' : '🟢 OUVERT'
         const places = `${t.current_participants}/${t.max_participants} joueurs`
         embed.addFields({
           name: `${status} — ${t.name}`,
-          value: `Mise : ${prix} | Pool : ${pool} | ${places}\n[S\'inscrire](https://djobicandle.com)`,
+          value: `Mise : ${prixFcfa(t.entry_price_fcfa)} | Pool : ${pool} | ${places}\n[S\'inscrire](https://djobicandle.com)`,
           inline: false
         })
       }
@@ -299,11 +326,10 @@ client.on('messageCreate', async (message) => {
       embed.setDescription('Aucun tournoi actif en ce moment.\n\n[djobicandle.com](https://djobicandle.com)')
     } else {
       const { data: top } = await supabase
-        .from('tournament_registrations')
-        .select('current_capital_usd, initial_capital_usd, profiles(username, display_name)')
+        .from('public_rankings')
+        .select('display_name, username, gain_percentage')
         .eq('tournament_id', tournoi.id)
-        .eq('is_disqualified', false)
-        .order('current_capital_usd', { ascending: false })
+        .order('gain_percentage', { ascending: false })
         .limit(10)
 
       embed.setDescription(`Tournoi : **${tournoi.name}**\nClassement par % de gain`)
@@ -311,8 +337,8 @@ client.on('messageCreate', async (message) => {
       if (top && top.length > 0) {
         const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟']
         const lines = top.map((r, i) => {
-          const name = r.profiles?.display_name || r.profiles?.username || 'Joueur'
-          const pnl = ((r.current_capital_usd - r.initial_capital_usd) / r.initial_capital_usd * 100).toFixed(2)
+          const name = r.display_name || r.username || 'Joueur'
+          const pnl = parseFloat(r.gain_percentage).toFixed(2)
           const sign = pnl >= 0 ? '+' : ''
           return `${medals[i]} **${name}** — ${sign}${pnl}%`
         }).join('\n')
